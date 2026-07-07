@@ -1,7 +1,15 @@
+import { createRequire } from 'node:module'
 import express from 'express'
 import cors from 'cors'
-import helmet from 'helmet'
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js'
+
+// helmet 8.2's split ESM/CJS type declarations resolve inconsistently across
+// TypeScript/bundler configurations (some resolve the default export as the
+// whole module namespace instead of the callable function). Loading via
+// createRequire sidesteps the ambiguity — this is always the real CJS
+// module.exports, which is the callable helmet function itself.
+const require = createRequire(import.meta.url)
+const helmet: typeof import('helmet').default = require('helmet')
 import { usersRouter } from './routes/users.routes.js'
 import { teamsRouter } from './routes/teams.routes.js'
 import { tournamentsRouter } from './routes/tournaments.routes.js'
