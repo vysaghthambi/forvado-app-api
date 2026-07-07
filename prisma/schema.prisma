@@ -1,0 +1,408 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  PLAYER
+  TEAM_OWNER
+  ADMIN
+}
+
+enum Position {
+  GK
+  DEF
+  MID
+  FWD
+}
+
+enum TournamentFormat {
+  LEAGUE
+  KNOCKOUT
+  GROUP_KNOCKOUT
+}
+
+enum TournamentStatus {
+  DRAFT
+  UPCOMING
+  ONGOING
+  COMPLETED
+}
+
+enum TeamMemberRole {
+  PLAYER
+  CAPTAIN
+  VICE_CAPTAIN
+}
+
+enum TeamMemberStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
+enum InvitationType {
+  INVITE
+  JOIN_REQUEST
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum MatchStatus {
+  SCHEDULED
+  FIRST_HALF
+  HALF_TIME
+  SECOND_HALF
+  FULL_TIME
+  EXTRA_TIME_FIRST_HALF
+  EXTRA_TIME_HALF_TIME
+  EXTRA_TIME_SECOND_HALF
+  EXTRA_TIME_FULL_TIME
+  PENALTY_SHOOTOUT
+  COMPLETED
+  CANCELLED
+  POSTPONED
+}
+
+enum MatchEventType {
+  GOAL
+  OWN_GOAL
+  EXTRA_TIME_GOAL
+  YELLOW_CARD
+  RED_CARD
+  SECOND_YELLOW
+  SUBSTITUTION
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id              String    @id @default(cuid())
+  authId          String    @unique
+  email           String    @unique
+  displayName     String
+  avatarUrl       String?
+  position        Position?
+  jerseyNumber    Int?
+  dateOfBirth     DateTime?
+  role            Role      @default(PLAYER)
+  profileComplete Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  ownedTeams           Team[]                 @relation("TeamOwner")
+  teamMemberships      TeamMembership[]
+  teamInvitations      TeamInvitation[]
+  tournamentsCreated   Tournament[]           @relation("TournamentCreator")
+  coordinatorRoles     TournamentCoordinator[]
+  matchLineups         MatchLineup[]
+  matchEventsPrimary   MatchEvent[]           @relation("PrimaryUser")
+  matchEventsSecondary MatchEvent[]           @relation("SecondaryUser")
+  matchEventsCreated   MatchEvent[]           @relation("EventCreator")
+  penaltyKicks         PenaltyShootout[]      @relation("PenaltyKicker")
+  penaltyKicksCreated  PenaltyShootout[]      @relation("PenaltyCreator")
+  playerOfMatchAwards  Match[]                @relation("PlayerOfMatch")
+  notifications        Notification[]
+
+  @@map("users")
+}
+
+model Team {
+  id                  String   @id @default(cuid())
+  name                String
+  badgeUrl            String?
+  homeColour          String?
+  shortCode           String?
+  description         String?
+  ownerId             String
+  isAcceptingRequests Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  deletedAt           DateTime?
+
+  // Relations
+  owner            User               @relation("TeamOwner", fields: [ownerId], references: [id])
+  members          TeamMembership[]
+  invitations      TeamInvitation[]
+  tournaments      TournamentTeam[]
+  homeMatches      Match[]            @relation("HomeTeam")
+  awayMatches      Match[]            @relation("AwayTeam")
+  matchLineups     MatchLineup[]
+  matchEvents      MatchEvent[]
+  penaltyShootouts PenaltyShootout[]
+
+  @@map("teams")
+}
+
+model TeamMembership {
+  id           String           @id @default(cuid())
+  teamId       String
+  userId       String
+  jerseyNumber Int?
+  role         TeamMemberRole   @default(PLAYER)
+  status       TeamMemberStatus @default(ACTIVE)
+  joinedAt     DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  // Relations
+  team Team @relation(fields: [teamId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([teamId, userId])
+  @@index([userId, status])
+  @@index([teamId, status])
+  @@map("team_memberships")
+}
+
+model TeamInvitation {
+  id          String           @id @default(cuid())
+  teamId      String
+  userId      String
+  type        InvitationType
+  status      InvitationStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  respondedAt DateTime?
+
+  // Relations
+  team Team @relation(fields: [teamId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([teamId, userId, type, status])
+  @@index([userId, status])
+  @@index([teamId, status])
+  @@map("team_invitations")
+}
+
+model Tournament {
+  id             String           @id @default(cuid())
+  name           String
+  description    String?
+  format         TournamentFormat
+  status         TournamentStatus @default(DRAFT)
+  startDate      DateTime
+  endDate        DateTime
+  venue          String?
+  maxTeams       Int
+  matchTime      Int              @default(90)
+  playingMembers Int              @default(11)
+  maxSubstitutes Int              @default(5)
+  isPublished    Boolean          @default(false)
+  knockoutRoundSize Int?
+  createdById    String
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  deletedAt      DateTime?
+
+  // Relations
+  createdBy    User                    @relation("TournamentCreator", fields: [createdById], references: [id])
+  groups       TournamentGroup[]
+  teams        TournamentTeam[]
+  coordinators TournamentCoordinator[]
+  matches      Match[]
+
+  @@index([status, isPublished])
+  @@index([deletedAt])
+  @@map("tournaments")
+}
+
+model TournamentGroup {
+  id           String   @id @default(cuid())
+  tournamentId String
+  name         String
+  createdAt    DateTime @default(now())
+
+  // Relations
+  tournament Tournament      @relation(fields: [tournamentId], references: [id])
+  teams      TournamentTeam[]
+  matches    Match[]
+
+  @@unique([tournamentId, name])
+  @@map("tournament_groups")
+}
+
+model TournamentTeam {
+  id           String   @id @default(cuid())
+  tournamentId String
+  teamId       String
+  groupId      String?
+  registeredAt DateTime @default(now())
+
+  // Relations
+  tournament Tournament       @relation(fields: [tournamentId], references: [id])
+  team       Team             @relation(fields: [teamId], references: [id])
+  group      TournamentGroup? @relation(fields: [groupId], references: [id])
+
+  @@unique([tournamentId, teamId])
+  @@index([teamId])
+  @@map("tournament_teams")
+}
+
+model TournamentCoordinator {
+  id           String   @id @default(cuid())
+  tournamentId String
+  userId       String
+  assignedAt   DateTime @default(now())
+
+  // Relations
+  tournament Tournament @relation(fields: [tournamentId], references: [id])
+  user       User       @relation(fields: [userId], references: [id])
+
+  @@unique([tournamentId, userId])
+  @@map("tournament_coordinators")
+}
+
+model Match {
+  id             String      @id @default(cuid())
+  tournamentId   String
+  homeTeamId     String?
+  awayTeamId     String?
+  matchOrder     Int
+  groupId        String?
+  round          String?
+  scheduledAt    DateTime?
+  venue          String?
+  matchTime      Int
+  playingMembers Int
+  maxSubstitutes Int
+  status         MatchStatus @default(SCHEDULED)
+  homeScore      Int         @default(0)
+  awayScore      Int         @default(0)
+  homePenaltyScore Int?
+  awayPenaltyScore Int?
+
+  // Knockout bracket
+  bracketRoundSize  Int?
+  bracketSlot       Int?
+  homeSourceMatchId String?
+  awaySourceMatchId String?
+
+  // Phase timestamps
+  firstHalfStartedAt      DateTime?
+  halfTimeAt               DateTime?
+  secondHalfStartedAt      DateTime?
+  fullTimeAt               DateTime?
+  etFirstHalfStartedAt     DateTime?
+  etHalfTimeAt             DateTime?
+  etSecondHalfStartedAt    DateTime?
+  etFullTimeAt             DateTime?
+  penaltyStartedAt         DateTime?
+  completedAt              DateTime?
+
+  playerOfMatchId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  tournament      Tournament        @relation(fields: [tournamentId], references: [id])
+  homeTeam        Team?             @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam        Team?             @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  group           TournamentGroup?  @relation(fields: [groupId], references: [id])
+  playerOfMatch   User?             @relation("PlayerOfMatch", fields: [playerOfMatchId], references: [id])
+  lineups         MatchLineup[]
+  events          MatchEvent[]
+  penalties       PenaltyShootout[]
+
+  // Bracket self-relations: this match's teams are fed by the winners of these two matches
+  homeSourceMatch Match?  @relation("HomeSource", fields: [homeSourceMatchId], references: [id])
+  awaySourceMatch Match?  @relation("AwaySource", fields: [awaySourceMatchId], references: [id])
+  feedsHomeOf     Match[] @relation("HomeSource")
+  feedsAwayOf     Match[] @relation("AwaySource")
+
+  @@unique([tournamentId, matchOrder])
+  @@unique([tournamentId, bracketRoundSize, bracketSlot])
+  @@index([tournamentId, status])
+  @@index([scheduledAt, status])
+  @@index([homeTeamId])
+  @@index([awayTeamId])
+  @@map("matches")
+}
+
+model MatchLineup {
+  id           String   @id @default(cuid())
+  matchId      String
+  teamId       String
+  userId       String
+  jerseyNumber Int
+  position     Position
+  isSubstitute Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  // Relations
+  match Match @relation(fields: [matchId], references: [id])
+  team  Team  @relation(fields: [teamId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@unique([matchId, teamId, userId])
+  @@index([userId])
+  @@map("match_lineups")
+}
+
+model MatchEvent {
+  id              String         @id @default(cuid())
+  matchId         String
+  type            MatchEventType
+  minute          Int
+  teamId          String
+  primaryUserId   String?
+  secondaryUserId String?
+  notes           String?
+  createdById     String
+  createdAt       DateTime       @default(now())
+
+  // Relations
+  match       Match  @relation(fields: [matchId], references: [id])
+  team        Team   @relation(fields: [teamId], references: [id])
+  primaryUser User?  @relation("PrimaryUser", fields: [primaryUserId], references: [id])
+  secondaryUser User? @relation("SecondaryUser", fields: [secondaryUserId], references: [id])
+  createdBy   User   @relation("EventCreator", fields: [createdById], references: [id])
+
+  @@index([matchId, type])
+  @@index([primaryUserId])
+  @@map("match_events")
+}
+
+model PenaltyShootout {
+  id          String   @id @default(cuid())
+  matchId     String
+  teamId      String
+  userId      String?
+  kickOrder   Int
+  scored      Boolean
+  createdById String
+  createdAt   DateTime @default(now())
+
+  // Relations
+  match     Match  @relation(fields: [matchId], references: [id])
+  team      Team   @relation(fields: [teamId], references: [id])
+  user      User?  @relation("PenaltyKicker", fields: [userId], references: [id])
+  createdBy User   @relation("PenaltyCreator", fields: [createdById], references: [id])
+
+  @@map("penalty_shootouts")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  link      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, read])
+  @@map("notifications")
+}
