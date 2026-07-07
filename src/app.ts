@@ -41,3 +41,13 @@ export function createApp() {
 
   return app
 }
+
+// Some Vercel project configurations invoke this file directly as the
+// serverless function entry (rather than api/index.ts) — see README's
+// "Deploying to Vercel" section. Vercel's Node runtime requires the
+// invoked module's default export to be a request handler function or an
+// http.Server; a bare named export (`createApp`) does not satisfy that
+// contract and fails with "Invalid export ... default export must be a
+// function or server." Exporting a ready instance here means this file
+// works no matter which of the two Vercel ends up invoking.
+export default createApp()
